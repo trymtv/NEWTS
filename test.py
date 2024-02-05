@@ -3,13 +3,10 @@ from read import read_test
 import numpy as np
 import time
 
-def time_tau_calc(topic_model, article, time=False):
-    W = topic_model.get_word_topic_prob()
-    T = np.mat([topic_prob for topic_id, topic_prob in topic_model.doc2topics(article)])
-    tau_d = T*W
-    return tau_d
+def get_token_weights(token_ids, token_weights, default_weight=1e-9):
+    return [token_weights[0, token_id] if token_id != -1 else default_weight for token_id in token_ids]
 
-model = TopicModel(modelAdd='./testmodel/lda.model', dictAdd='./testmodel/dictionary.dic')
-test_pd = read_test()
-all_tau = [time_tau_calc(model, article) for article in test_pd.article]
-print(np.concatenate(all_tau))
+model = TopicModel(model_path='./testmodel/lda.model', dict_path='./testmodel/dictionary.dic')
+id = model.topic_model_dictionary.token2id['potato']
+topic_id = model.get_word_topic_prob()[:, id].argmax()
+print(model.topic_model.show_topic(topic_id))
