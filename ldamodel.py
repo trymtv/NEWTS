@@ -3,6 +3,7 @@ from gensim.corpora import Dictionary
 import numpy as np
 from collections import defaultdict 
 import torch
+from sklearn.feature_extraction.text import CountVectorizer
 
 # from https://github.com/ali-bahrainian/CATS/blob/main/data.py
 
@@ -71,6 +72,14 @@ class TopicModel(object):
         for token in tokens:
             bow_dict[self.token2id(token)] += 1
         return bow_dict
+    
+    def sklearn_bow(self, articles):
+        token_to_index_dict = {self.topic_model_dictionary.id2token[id]: index for id, index in self._word_to_top_word.items()}
+        vectorizer = CountVectorizer(vocabulary=token_to_index_dict)
+        return vectorizer.fit_transform(articles)
+
+    def sklearn_bow_tensor(self, articles):
+        return torch.tensor(self.sklearn_bow(articles).toarray())
     
     def bow_tensor(self, tokens):
         bow_dict = self.bow_dict(tokens)
