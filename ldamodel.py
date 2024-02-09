@@ -17,6 +17,7 @@ class TopicModel(object):
         dict_path,
         num_topics=None,
         vocab_per_topic_size=None,
+        tokenizer=None,
         oov_value=1e-8,
     ):
         self.topic_model, self.topic_model_dictionary = self._load_pretrained_model(
@@ -35,6 +36,7 @@ class TopicModel(object):
         self._new_word_to_old_word = None
         self._old_word_to_new_word = None
         self.old_relevant_topics = None
+        self.tokenizer = tokenizer
         self._oov_value = oov_value
         self.vocab_per_topic_size = vocab_per_topic_size
 
@@ -94,42 +96,25 @@ class TopicModel(object):
         )
 
     def get_token_weights(self, tokens):
-        tau = self.tau_calc(tokens)
+        tau = self.tau_calc(tokens, with_oov = True)
         token_weights = [tau[self.token2id(token)] for token in tokens]
         return tokens, token_weights
-
-    def bow_dict(self, tokens):
-        bow_dict = defaultdict(lambda: 0)
-        for token in tokens:
-            bow_dict[self.token2id(token)] += 1
-        return bow_dict
 
     def sklearn_bow(self, articles):
         token_to_index_dict = {
             self.topic_model_dictionary.id2token[id]: index
             for id, index in self._old_word_to_new_word.items()
         }
-        vectorizer = CountVectorizer(vocabulary=token_to_index_dict)
+        vectorizer = CountVectorizer(vocabulary=token_to_index_dict, tokenizer=self.tokenizer)
         return vectorizer.fit_transform(articles)
 
     def sklearn_bow_tensor(self, articles):
         return torch.tensor(self.sklearn_bow(articles).toarray())
 
-    def bow_tensor(self, tokens):
-        bow_dict = self.bow_dict(tokens)
-        bow_dict.pop(-1)
-        word_indices = list(bow_dict.keys())
-        word_counts = list(bow_dict.values())
-        indices_tensor = torch.tensor(word_indices)
-        counts_tensor = torch.tensor(word_counts)
-        return torch.sparse_coo_tensor(
-            indices_tensor.view(1, -1), counts_tensor, size=(self.vocab_size,)
-        )
-
     def doc_2_ids(self, doc):
-        return [self.token2id.get(token, -1) for token in doc.split()]
+        return [self.token2id.get(token, -1) for token in self.tokenizer(doc)]
 
-    def new_tau_calc(self, tokens, with_oov=False):
+    def tau_calc(self, tokens, with_oov=False):
         W = self.word_topic_prob
         T = np.mat(
             [
@@ -142,16 +127,3 @@ class TopicModel(object):
             return np.append(tau_d, [[self._oov_value]], axis=1)
         else:
             return tau_d
-
-    def tau_calc(self, tokens):
-        W = self.word_topic_prob
-        relevant_topics = list(self._old_topic_to_new_topic.keys())
-        T = np.mat(
-            [
-                topic_prob
-                for topic_id, topic_prob in self.doc2topics(tokens)
-                if topic_id in relevant_topics
-            ]
-        )
-        tau_d = T * W
-        return np.append(np.ravel(tau_d), self._oov_value)
