@@ -1,7 +1,6 @@
 from gensim.models.ldamodel import LdaModel
 from gensim.corpora import Dictionary
 import numpy as np
-from collections import defaultdict
 import torch
 from sklearn.feature_extraction.text import CountVectorizer
 
@@ -31,11 +30,12 @@ class TopicModel(object):
         self.num_topics = (
             self.topic_model.num_topics if num_topics is None else num_topics
         )
-        self._new_topic_to_old_topic = None
-        self._old_topic_to_new_topic = None
+
         self._new_word_to_old_word = None
         self._old_word_to_new_word = None
-        self.old_relevant_topics = None
+        self.token_to_index_dict = None
+
+        self.top_topics = None
         self.tokenizer = tokenizer
         self._oov_value = oov_value
         self.vocab_per_topic_size = vocab_per_topic_size
@@ -65,10 +65,15 @@ class TopicModel(object):
         }
         self._old_word_to_new_word = {word: i for i, word in self._new_word_to_old_word.items()}
 
-        self.old_relevant_topics = sorted(list(self._old_topic_to_new_topic.keys()))
+        self.token_to_index_dict = {
+            self.topic_model_dictionary.id2token[id]: index
+            for id, index in self._old_word_to_new_word.items()
+        }
+
+        self.top_topics = top_topics
 
         all_topics_to_all_words = self.topic_model.get_topics()
-        new_topics_to_new_words = all_topics_to_all_words[np.ix_(top_topics, top_word_ids)]
+        new_topics_to_new_words = all_topics_to_all_words[np.ix_(self.top_topics, top_word_ids)]
         return new_topics_to_new_words
 
     def _load_pretrained_model(self, model_path, dict_path):
@@ -101,11 +106,7 @@ class TopicModel(object):
         return tokens, token_weights
 
     def sklearn_bow(self, articles):
-        token_to_index_dict = {
-            self.topic_model_dictionary.id2token[id]: index
-            for id, index in self._old_word_to_new_word.items()
-        }
-        vectorizer = CountVectorizer(vocabulary=token_to_index_dict, tokenizer=self.tokenizer)
+        vectorizer = CountVectorizer(vocabulary=self.token_to_index_dict, tokenizer=self.tokenizer)
         return vectorizer.fit_transform(articles)
 
     def sklearn_bow_tensor(self, articles):
@@ -116,13 +117,13 @@ class TopicModel(object):
 
     def tau_calc(self, tokens, with_oov=False):
         W = self.word_topic_prob
-        T = np.mat(
-            [
+        T = np.array(
+            [[
                 topic_prob
                 for _, topic_prob in self.doc2topics(tokens)
-            ]
+            ]]
         )
-        tau_d = T[:, self.old_relevant_topics] * W
+        tau_d = T[:, self.top_topics].dot(W)
         if with_oov:
             return np.append(tau_d, [[self._oov_value]], axis=1)
         else:
