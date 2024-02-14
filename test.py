@@ -60,29 +60,19 @@ class TestModelGeneration(unittest.TestCase):
     def test_bow(self):
         num_tokens = 10
         id_step = 5
+
         wanted_tokens = [self.model.id2token(id) for id in self.model._new_word_to_old_word.keys()][:num_tokens*id_step:id_step]
         wanted_bow = {token: count + 1 for count, token in enumerate(wanted_tokens)}
+
         bow_list = [token for wanted_token, count in wanted_bow.items() for token in [wanted_token]*count]
-        bow_string = " ".join(bow_list)
-        bow = self.model.sklearn_bow([bow_string]).toarray()
+        bow = self.model.sklearn_bow(bow_list).toarray()
         not_null_indices = np.where((bow != 0))[1]
+
         token_bow = {self.model.id2token(id): count for id, count in zip(not_null_indices, bow[0][not_null_indices])}
-        self.assertDictEqual(wanted_bow, token_bow)
-
         null_indices = np.where((bow == 0))[1]
-        self.assertEqual(len(not_null_indices) + len(null_indices), self.model.vocab_size)
 
-        # With custom tokenizer
-        self.model.tokenizer = lambda article: article.split(" ,")
-        bow_string = " ,".join(bow_list)
-        bow = self.model.sklearn_bow([bow_string]).toarray()
-        not_null_indices = np.where((bow != 0))[1]
-        token_bow = {self.model.id2token(id): count for id, count in zip(not_null_indices, bow[0][not_null_indices])}
         self.assertDictEqual(wanted_bow, token_bow)
-
-        null_indices = np.where((bow == 0))[1]
         self.assertEqual(len(not_null_indices) + len(null_indices), self.model.vocab_size)
-
 
 if __name__ == "__main__":
     unittest.main()

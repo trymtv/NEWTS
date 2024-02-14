@@ -3,6 +3,7 @@ from gensim.corpora import Dictionary
 import numpy as np
 import torch
 from sklearn.feature_extraction.text import CountVectorizer
+from scipy.sparse import coo_array
 
 # from https://github.com/ali-bahrainian/CATS/blob/main/data.py
 
@@ -16,7 +17,6 @@ class TopicModel(object):
         dict_path,
         num_topics=None,
         vocab_per_topic_size=None,
-        tokenizer=None,
         oov_value=1e-8,
     ):
         self.topic_model, self.topic_model_dictionary = self._load_pretrained_model(
@@ -36,7 +36,8 @@ class TopicModel(object):
         self.token_to_index_dict = None
 
         self.top_topics = None
-        self.tokenizer = tokenizer
+        self.top_words_set = None
+
         self._oov_value = oov_value
         self.vocab_per_topic_size = vocab_per_topic_size
 
@@ -56,6 +57,8 @@ class TopicModel(object):
             for word, _ in word_list
         }
         top_word_ids = sorted(list(top_word_ids))
+        self.top_words_set = set(top_word_ids)
+
         self.vocab_size = len(top_word_ids)
 
         self._new_topic_to_old_topic = {i: topic for i, topic in enumerate(top_topics)}
@@ -105,12 +108,17 @@ class TopicModel(object):
         token_weights = [tau[self.token2id(token)] for token in tokens]
         return tokens, token_weights
 
-    def sklearn_bow(self, articles):
-        vectorizer = CountVectorizer(vocabulary=self.token_to_index_dict, tokenizer=self.tokenizer)
-        return vectorizer.fit_transform(articles)
+    def bow(self, tokens):
+        ids_to_counts = self.topic_model_dictionary.doc2bow(tokens)
+        wanted_counts =  ((self._old_word_to_new_word[id], count) for id, count in ids_to_counts if id in self.top_words_set)
+        ids, counts = zip(*wanted_counts)
+        return coo_array((counts, (np.zeros(len(ids)), ids)), shape=(1, self.vocab_size))
+
+    def sklearn_bow(self, tokens):
+        return self.bow(tokens)
 
     def sklearn_bow_tensor(self, articles):
-        return torch.tensor(self.sklearn_bow(articles).toarray())
+        return torch.tensor(self.bow(articles).toarray())
 
     def doc_2_ids(self, doc):
         return [self.token2id.get(token, -1) for token in self.tokenizer(doc)]
