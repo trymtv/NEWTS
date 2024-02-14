@@ -61,18 +61,42 @@ class TestModelGeneration(unittest.TestCase):
         num_tokens = 10
         id_step = 5
 
-        wanted_tokens = [self.model.id2token(id) for id in self.model._new_word_to_old_word.keys()][:num_tokens*id_step:id_step]
+        top_tokens = [
+            self.model.id2token(self.model._old_word_to_new_word[id])
+            for id in self.model.top_words_set
+        ]
+
+        wanted_tokens = top_tokens[: num_tokens * id_step : id_step]
+
+        unwanted_tokens = [
+            self.model.topic_model_dictionary.id2token[unwanted_id]
+            for unwanted_id in range(
+                self.model.vocab_size + 1, self.model.vocab_size + num_tokens
+            )
+        ]
+
         wanted_bow = {token: count + 1 for count, token in enumerate(wanted_tokens)}
 
-        bow_list = [token for wanted_token, count in wanted_bow.items() for token in [wanted_token]*count]
-        bow = self.model.sklearn_bow(bow_list).toarray()
-        not_null_indices = np.where((bow != 0))[1]
+        tokens = [
+            token
+            for wanted_token, count in wanted_bow.items()
+            for token in [wanted_token] * count
+        ]
+        bow = self.model.bow(tokens + unwanted_tokens).toarray()
 
-        token_bow = {self.model.id2token(id): count for id, count in zip(not_null_indices, bow[0][not_null_indices])}
+        not_null_indices = np.where((bow != 0))[1]
         null_indices = np.where((bow == 0))[1]
 
+        token_bow = {
+            self.model.id2token(id): count
+            for id, count in zip(not_null_indices, bow[0][not_null_indices])
+        }
+
         self.assertDictEqual(wanted_bow, token_bow)
-        self.assertEqual(len(not_null_indices) + len(null_indices), self.model.vocab_size)
+        self.assertEqual(
+            len(not_null_indices) + len(null_indices), self.model.vocab_size
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
